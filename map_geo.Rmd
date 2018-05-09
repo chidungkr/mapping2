@@ -1,0 +1,275 @@
+---
+title: "Choropleth Maps and Mapping (Part 1)"
+subtitle: "R for Econometrics"
+author: "VCREME Center of Research"
+output:
+  tufte::tufte_html: default
+  tufte::tufte_handout:
+    citation_package: natbib
+    latex_engine: xelatex
+  tufte::tufte_book:
+    citation_package: natbib
+    latex_engine: xelatex
+bibliography: skeleton.bib
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+library(tufte)
+# invalidate cache when the tufte version changes
+knitr::opts_chunk$set(tidy = FALSE, cache.extra = packageVersion('tufte'), warning = FALSE, message = FALSE)
+options(htmltools.dir.version = FALSE)
+```
+
+# Giới thiệu
+
+Choropleth Maps chắc chắn là một trong những công cụ hình ảnh hóa dữ liệu hữu ích trong nhiều tình huống nhất là với người làm nghiên cứu. Điển hình là nó truyền tải một cách nhanh chóng và ấn tượng, ví dụ, thị phần của hãng Coca Cola tại các tỉnh ở VN ra sao hoặc tỉ lệ đói nghèo theo khu vực địa lí bằng cách căn cứ vào độ đậm hay nhạt của màu sắc. 
+
+Trong bài viết này chúng ta sẽ thực hiện một số lệnh thực hành tạo ra Choropleth Maps đơn giản nhất. Cụ thể là hình ảnh hóa dữ liệu về thị phần của Coca Cola ở các tỉnh của VN dựa trên một bộ dữ liệu giả mà chúng ta mô phỏng cho thị phần của hãng đồ uống này.
+
+Công cụ chính để chúng ta tạo các maps là: (1) gói raster dùng để lấy dữ liệu địa lí, và (2) gói ggplot2 quen thuộc để vẽ mà cụ thể là hàm geom_polygon() của gói này.
+
+
+Dưới đây là toàn bộ R codes để tạo những bản đồ trên (không hiển thị kết quả). 
+
+
+
+```{r, eval=FALSE}
+
+
+#===================================
+#    Mapping for Nghệ An Province
+#===================================
+
+rm(list = ls())
+library(tidyverse)
+library(magrittr)
+library(raster)
+
+# Lấy dữ liệu địa lí của VN đến cấp xã: 
+vietnam_h <- getData("GADM", country = "Vietnam", level = 3)
+
+# Và dữ liệu địa lí của VN đến cấp tỉnh: 
+vietnam <- getData("GADM", country = "Vietnam", level = 1)
+
+# Không sử dụng package này nữa: 
+detach(package:raster)
+
+# Tách riêng tỉnh Nghệ An: 
+na <- vietnam_h[vietnam_h$NAME_1 == "Nghệ An", ]
+
+# Chuyển hóa về DF quen thuộc: 
+na_df1 <- na %>% fortify(region = "ID_3")
+
+# Vẽ bản đồ đến cấp xã cho Nghệ An: 
+na_df1 %>% 
+  ggplot(aes(x = long, y = lat, group = group))+
+  geom_polygon(aes(fill = id), 
+               color = "grey90",
+               show.legend = FALSE, 
+               size = 0.01) +  
+  coord_equal() + 
+  labs(x = NULL, y = NULL, 
+       title = "Map of Nghe An Province by Commune Level") -> p1
+
+p1
+
+p1 + theme_dark()
+
+# Hàm tạo một theme riêng: 
+theme_map <- function(...) {
+  theme_minimal() +
+    theme(
+      text = element_text(color = "#22211d", face = "bold"),
+      axis.line = element_blank(),
+      axis.text.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      panel.grid.major = element_line(color = "#ebebe5", size = 0.2),
+      panel.grid.minor = element_blank(),
+      plot.background = element_rect(fill = "#f5f5f2", color = NA), 
+      panel.background = element_rect(fill = "#f5f5f2", color = NA), 
+      legend.background = element_rect(fill = "#f5f5f2", color = NA),
+      panel.border = element_blank(),
+    )
+}
+
+
+# Sử dụng hàm này: 
+p1 + theme_map()
+
+# Tạo một bộ dữ liệu giả về mật độ dân số (nghìn người trên một km2): 
+set.seed(1)
+mat_do <- data.frame(id = na_df1$id %>% unique(), 
+                     pop_den = rnorm(na_df1$id %>% unique() %>% length(), 184, 100) %>% abs %>% round(0))
+
+# Joint các dữ liệu: 
+na_df1_den <- na_df1 %>% right_join(., mat_do, by = "id")
+
+
+# Bản đồ với độ đậm nhạt của màu sắc hiển thị 
+# mật độ dân số theo xã (cách 1): 
+
+na_df1_den %>% 
+  ggplot(aes(x = long, y = lat, group = group))+
+  geom_polygon(aes(fill = pop_den), 
+               color = "grey90",
+               show.legend = FALSE, 
+               size = 0.01) +  
+  coord_equal() + 
+  labs(x = NULL, y = NULL, 
+       title = "Map of Nghe An Province by Commune Level") -> p2_cach1
+
+p2_cach1
+
+
+# Bản đồ mật độ dân số cách 2: 
+
+p2_cach2 <- ggplot() +
+  geom_polygon(data = na_df1_den, 
+               aes(fill = pop_den, x = long, y = lat, group = group)) +
+  geom_path(data = na_df1_den, aes(x = long, y = lat, group = group), 
+            color = "white", size = 0.1) +
+  coord_equal() +
+  theme_map() +
+  labs(x = NULL, y = NULL, 
+       title = "Nghe An's Regional Demographics", 
+       subtitle = "Average Population Density by Commune, 2016", 
+       caption = "Data Source: GSO and Nghe An Statistical Authority, 2016")
+
+p2_cach2
+
+# Chúng ta nên hiệu chỉnh lần nữa: 
+
+library(viridis)
+p2_cach2 + 
+  scale_fill_viridis(direction = -1, option = "D", "Population Density\nby Commune")
+
+# Hoặc cách khác: 
+p2_cach2 + 
+  scale_fill_viridis(direction = -1, option = "C", "Population Density\nby Commune")
+
+
+p2_cach2 + 
+  scale_fill_viridis(direction = -1, option = "A", "Population Density\nby Commune")
+
+# Cách khách nữa: 
+
+p2_cach2 +
+  scale_fill_viridis(direction = -1, option = "A", "Population Density\nby Commune") + 
+  theme(legend.position = c(0.9, 0.85))
+
+p2_cach2 +
+  scale_fill_viridis(direction = -1, option = "A", "Population Density\nby Commune") + 
+  theme(legend.position = "top")
+
+
+
+# Vẽ đến cấp huyện: 
+na_df2 <- na %>% fortify(region = "ID_2")
+
+na_df2 %>% 
+  ggplot(aes(x = long, y = lat, group = group))+
+  geom_polygon(aes(fill = id), 
+               color = "grey90",
+               show.legend = FALSE, 
+               alpha = 0.7) +  
+  labs(x = NULL, y = NULL, 
+       title = "Map of Nghe An Province by District Level") + 
+  theme_map()
+
+
+# Vẽ đến cấp huyện đồng thời biểu diễn cả centroid - trung tâm của huyện: 
+
+na_cen_long <- na_df2 %>% 
+  group_by(id) %>% 
+  summarise_each(funs(mean), long)
+
+na_cen_lat <- na_df2 %>% 
+  group_by(id) %>% 
+  summarise_each(funs(mean), lat)
+
+cen <- data.frame(long = na_cen_long$long, 
+                  lat = na_cen_lat$lat, 
+                  name = na$NAME_2 %>% unique())
+
+
+# Vẽ: 
+ggplot() + 
+  geom_polygon(data = na_df2, aes(x = long, y = lat, group = group, fill = id), 
+               color = "grey90", show.legend = FALSE, alpha = 0.7) +  
+  geom_point(data = cen, aes(x = long, y = lat), size = 3, color = "red") + 
+  labs(x = NULL, y = NULL, 
+       title = "Map of Nghe An Province by District Level with Corresponding Centroids") + 
+  theme_map()
+
+
+# Hoặc huyện nơi lớn lên của tôi là huyện Nghĩa Đàn: 
+library(ggrepel)
+
+ten <- na$NAME_2 %>% unique()
+
+ggplot() + 
+  geom_polygon(data = na_df2, aes(x = long, y = lat, group = group, fill = id), 
+               color = "grey90", show.legend = FALSE, alpha = 0.7) +  
+  geom_point(data = cen, aes(x = long, y = lat), size = 3, color = "red") + 
+  geom_text_repel(data = cen %>% filter(name == ten[9]), aes(long, lat), label = ten[9], force = 19) + 
+  labs(x = NULL, y = NULL, 
+       title = "Map of Nghe An Province by District Level with Corresponding Centroids") + 
+  theme_map()
+
+
+#===================================
+#        Mapping for Vietnam
+#===================================
+vietnam_df <- vietnam %>% fortify(region = "ID_1")
+
+m1 <- vietnam_df %>% 
+  ggplot(aes(x = long, y = lat, group = group))+
+  geom_polygon(aes(fill = id), color = "grey30", show.legend = FALSE) +  
+  coord_equal() + 
+  labs(x = NULL, y = NULL, title = "Map of Vietnam by Province", 
+       subtitle = "Note: Paracel Islands and Spratly Islands\nBelong to Vietnam Are Not Shown on This Map") +  
+  theme_void()
+
+m1
+
+# Bịa ra bộ số liệu giả định về tỉ lệ hộ nghèo trên 1000 hộ của các tỉnh: 
+set.seed(1)
+mydf <- data.frame(id = vietnam_df$id %>% unique(), 
+                   poverty = runif(vietnam_df$id %>% unique() %>% length(), 20, 60) %>% round())
+
+
+# Hợp nhất dữ liệu: 
+vietnam_df_share <- right_join(vietnam_df, mydf, by = "id")
+
+# Vẽ cái bản đồ: 
+vietnam_df_share %>% 
+  ggplot(aes(x = long, y = lat, group = group))+
+  geom_polygon(aes(fill = poverty), color = "grey30") +  
+  coord_equal() + 
+  labs(title = "Map of Poverty Rate by Province", 
+       subtitle = "Note: Paracel Islands and Spratly Islands\nBelong to Vietnam Are Not Shown on This Map", 
+       caption = "Data Source: GSO") -> map1
+
+# Nguyên bản: 
+map1
+
+
+# Kiểu 1: 
+map1 + 
+  theme_map() + 
+  scale_fill_viridis(direction = -1, option = "A", "Poverty Rate\nby Province") + 
+  theme(legend.position = c(0.2, 0.4))
+  
+# Kiểu 2:   
+map1 + 
+  theme_map() + 
+  scale_fill_viridis(direction = -1, option = "A", "Poverty Rate by Province") + 
+  theme(legend.position = "top")
+  
+
+```
+
